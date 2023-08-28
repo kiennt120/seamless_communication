@@ -210,6 +210,7 @@ class Translator(nn.Module):
                     "sample_rate": sample_rate,
                     "format": -1,
                 }
+            print("decoded_audio:", decoded_audio)
             src = self.collate(self.convert_to_fbank(decoded_audio))["fbank"]
         else:
             if src_lang is None:

@@ -210,8 +210,8 @@ class Translator(nn.Module):
                     "sample_rate": sample_rate,
                     "format": -1,
                 }
-            print("convert_to_fbank:", self.convert_to_fbank(decoded_audio))
             src = self.collate(self.convert_to_fbank(decoded_audio))["fbank"]
+            print("src:", src)
         else:
             if src_lang is None:
                 raise ValueError("src_lang must be specified for T2ST, T2TT tasks.")

@@ -5,6 +5,8 @@
 
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple, Union
+import os
+import csv
 
 import torch
 import torch.nn as nn
@@ -170,6 +172,7 @@ class Translator(nn.Module):
         text_max_len_b: int = 200,
         unit_max_len_a: Optional[int] = None,
         unit_max_len_b: Optional[int] = None,
+        save_path: str = None,
     ) -> Tuple[StringLike, Optional[Tensor], Optional[int]]:
         """
         The main method used to perform inference on all tasks.
@@ -198,50 +201,66 @@ class Translator(nn.Module):
 
         input_modality, output_modality = self.get_modalities_from_task(task)
 
-        if input_modality == Modality.SPEECH:
-            audio = input
-            if isinstance(audio, str):
-                with Path(audio).open("rb") as fb:
-                    block = MemoryBlock(fb.read())
-                decoded_audio = self.decode_audio(block)
+        if os.path.isdir(input):
+            files = os.listdir(input)
+            list_files = []
+            for i in files:
+                list_files.append(os.path.join(input, i))
+        else:
+            list_files = [input]
+
+        writer = csv.writer(save_path)
+        writer.writerow(['files', 'sentences'])
+
+        for file in list_files:
+            if input_modality == Modality.SPEECH:
+                audio = file
+                if isinstance(audio, str):
+                    with Path(audio).open("rb") as fb:
+                        block = MemoryBlock(fb.read())
+                    decoded_audio = self.decode_audio(block)
+                else:
+                    decoded_audio = {
+                        "waveform": audio,
+                        "sample_rate": sample_rate,
+                        "format": -1,
+                    }
+                src = self.collate(self.convert_to_fbank(decoded_audio))["fbank"]
+                # print("src:", src)
             else:
-                decoded_audio = {
-                    "waveform": audio,
-                    "sample_rate": sample_rate,
-                    "format": -1,
-                }
-            src = self.collate(self.convert_to_fbank(decoded_audio))["fbank"]
-            print("src:", src)
-        else:
-            if src_lang is None:
-                raise ValueError("src_lang must be specified for T2ST, T2TT tasks.")
+                if src_lang is None:
+                    raise ValueError("src_lang must be specified for T2ST, T2TT tasks.")
 
-            text = input
-            self.token_encoder = self.text_tokenizer.create_encoder(
-                task="translation", lang=src_lang, mode="source", device=self.device
+                text = file
+                self.token_encoder = self.text_tokenizer.create_encoder(
+                    task="translation", lang=src_lang, mode="source", device=self.device
+                )
+                src = self.collate(self.token_encoder(text))
+
+            result = self.get_prediction(
+                self.model,
+                self.text_tokenizer,
+                self.unit_tokenizer,
+                src,
+                input_modality,
+                output_modality,
+                tgt_lang=tgt_lang,
+                ngram_filtering=ngram_filtering,
+                text_max_len_a=text_max_len_a,
+                text_max_len_b=text_max_len_b,
+                unit_max_len_a=unit_max_len_a,
+                unit_max_len_b=unit_max_len_b,
             )
-            src = self.collate(self.token_encoder(text))
 
-        result = self.get_prediction(
-            self.model,
-            self.text_tokenizer,
-            self.unit_tokenizer,
-            src,
-            input_modality,
-            output_modality,
-            tgt_lang=tgt_lang,
-            ngram_filtering=ngram_filtering,
-            text_max_len_a=text_max_len_a,
-            text_max_len_b=text_max_len_b,
-            unit_max_len_a=unit_max_len_a,
-            unit_max_len_b=unit_max_len_b,
-        )
+            text_out = result[0]
+            # unit_out = result[1]
+            writer.writerow([os.path.basename(file), text_out.sentences[0]])
 
-        text_out = result[0]
-        unit_out = result[1]
-        if output_modality == Modality.TEXT:
-            return text_out.sentences[0], None, None
-        else:
-            units = unit_out.units[:, 1:][0].cpu().numpy().tolist()
-            wav_out = self.vocoder(units, tgt_lang, spkr, dur_prediction=True)
-            return text_out.sentences[0], wav_out, sample_rate
+            # if output_modality == Modality.TEXT:
+            #     return text_out.sentences[0], None, None
+            # else:
+            #     units = unit_out.units[:, 1:][0].cpu().numpy().tolist()
+            #     wav_out = self.vocoder(units, tgt_lang, spkr, dur_prediction=True)
+            #     return text_out.sentences[0], wav_out, sample_rate
+
+        

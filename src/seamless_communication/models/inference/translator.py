@@ -209,6 +209,7 @@ class Translator(nn.Module):
         else:
             list_files = [input]
 
+        save_path = open(save_path, 'w')
         writer = csv.writer(save_path)
         writer.writerow(['files', 'sentences'])
 
@@ -262,5 +263,3 @@ class Translator(nn.Module):
             #     units = unit_out.units[:, 1:][0].cpu().numpy().tolist()
             #     wav_out = self.vocoder(units, tgt_lang, spkr, dur_prediction=True)
             #     return text_out.sentences[0], wav_out, sample_rate
-
-        
